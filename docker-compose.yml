@@ -1,0 +1,65 @@
+name: netlab-defender
+
+networks:
+  eng:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.1.0/24
+          gateway: 10.10.1.254
+  fin:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.2.0/24
+          gateway: 10.10.2.254
+  db:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.3.0/24
+          gateway: 10.10.3.254
+
+services:
+  router:
+    build: ./router
+    cap_add: [NET_ADMIN]
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    command: ["/bin/sh", "-c", "sh /scripts/firewall.sh apply && exec sleep infinity"]
+    volumes:
+      - ./router/firewall.sh:/scripts/firewall.sh:ro
+    networks:
+      eng: { ipv4_address: 10.10.1.1 }
+      fin: { ipv4_address: 10.10.2.1 }
+      db:  { ipv4_address: 10.10.3.1 }
+
+  eng-client:
+    build: ./client
+    cap_add: [NET_ADMIN]
+    entrypoint: ["/bin/sh", "-c", "ip route replace default via 10.10.1.1 && exec sleep infinity"]
+    networks:
+      eng: { ipv4_address: 10.10.1.10 }
+
+  fin-client:
+    build: ./client
+    cap_add: [NET_ADMIN]
+    entrypoint: ["/bin/sh", "-c", "ip route replace default via 10.10.2.1 && exec sleep infinity"]
+    networks:
+      fin: { ipv4_address: 10.10.2.10 }
+
+  web:
+    build: ./services/web
+    cap_add: [NET_ADMIN]
+    entrypoint: ["/bin/sh", "-c", "ip route replace default via 10.10.1.1 && exec nginx -g 'daemon off;'"]
+    networks:
+      eng: { ipv4_address: 10.10.1.20 }
+
+  db-server:
+    image: postgres:16-alpine
+    cap_add: [NET_ADMIN]
+    environment:
+      POSTGRES_PASSWORD: labonly
+    entrypoint: ["/bin/sh", "-c", "ip route replace default via 10.10.3.1 && exec docker-entrypoint.sh postgres"]
+    networks:
+      db: { ipv4_address: 10.10.3.30 }

@@ -1,0 +1,18 @@
+RESULT | TEST                             | EXPECTED       | GOT
+PASS | Eng client -> Web   TCP/80       | expected ALLOW | got ALLOW
+PASS | Web -> DB           TCP/5432     | expected ALLOW | got ALLOW
+PASS | Fin client -> Web   TCP/80       | expected DENY  | got DENY 
+PASS | Eng client -> DB    TCP/5432     | expected DENY  | got DENY 
+PASS | Fin client -> DB    TCP/5432     | expected DENY  | got DENY 
+PASS | Fin client -> Eng   ICMP         | expected DENY  | got DENY 
+
+Passed: 6   Failed: 0
+
+Chain FORWARD (policy DROP 0 packets, 0 bytes)
+num   pkts bytes target     prot opt in     out     source               destination         
+1        6   320 ACCEPT     0    --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+2        0     0 ACCEPT     6    --  *      *       10.10.1.0/24         10.10.1.20           tcp dpt:80 ctstate NEW
+3        1    60 ACCEPT     6    --  *      *       10.10.1.20           10.10.3.30           tcp dpt:5432 ctstate NEW
+4        4   264 DROP       0    --  *      *       10.10.2.0/24         10.10.1.0/24        
+5        3   180 DROP       0    --  *      *       10.10.2.0/24         10.10.3.0/24        
+6        3   180 DROP       0    --  *      *       10.10.1.0/24         10.10.3.0/24        
