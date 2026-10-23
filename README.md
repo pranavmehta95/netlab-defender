@@ -66,3 +66,78 @@ Lab only, static rules, no production hardening, IPv4 only.
 ## Future work
 
 Central logging, VLANs, IDS alerts, a DNS service, CI-run tests.
+
+## Demo walkthrough
+
+Total time: about 3 minutes. Run these from the project root.
+
+### Setup
+
+    export DOCKER_CLI_HINTS=false
+    docker compose down && docker compose up -d
+    docker compose exec router sh /scripts/firewall.sh apply
+
+Wait about 10 seconds for PostgreSQL to start. The `apply` step resets the
+iptables counters so the final table shows only the demo traffic.
+
+### 1. Show the topology
+
+    docker compose ps
+    docker compose exec router ip -br addr | grep eth
+
+Expected: five running containers, and the router has one interface in each
+subnet (10.10.1.1, 10.10.2.1, 10.10.3.1). Interface names (eth0, eth1, eth2)
+can change between runs, so match them by IP address.
+
+### 2. Allowed: Engineering reaches the web server
+
+    docker compose exec eng-client curl -s -m 3 http://10.10.1.20 | head -3
+
+Expected: the start of the nginx welcome page.
+
+### 3. Denied: users cannot reach the database or each other
+
+    docker compose exec eng-client nc -zv -w 2 10.10.3.30 5432
+    docker compose exec fin-client nc -zv -w 2 10.10.1.20 80
+
+Expected: both time out. Denied packets are dropped silently by the router.
+
+### 4. Allowed: only the web server reaches the database
+
+    docker compose exec web nc -zv -w 2 10.10.3.30 5432
+
+Expected: `succeeded!`
+
+### 5. Prove it with the firewall counters
+
+    docker compose exec router sh /scripts/firewall.sh status
+
+Expected: packets on the Web to DB accept rule and on the drop rules for the
+denied flows. The Engineering to Web counter stays at 0 because both hosts share
+a subnet, so that traffic never crosses the router.
+
+### 6. Prove it with a packet capture (optional)
+
+In one terminal:
+
+    docker compose exec router tcpdump -ni any "tcp port 5432"
+
+In a second terminal, run the allowed and denied database tests from steps 3
+and 4. Allowed traffic shows an In and an Out line plus the full TCP handshake.
+Denied traffic shows only repeated SYN packets coming In, with no Out and no
+reply, because the router discarded them.
+
+### 7. Prove the tests detect a broken firewall (optional)
+
+    docker compose exec router sh /scripts/firewall.sh open
+    bash tests/run-tests.sh
+    docker compose exec router sh /scripts/firewall.sh apply
+
+Expected: with the policy off, the 4 denied tests fail. Run `apply` afterwards
+to restore the policy.
+
+### Automated version
+
+    bash tests/run-tests.sh
+
+Runs all 6 checks and prints PASS or FAIL for each, then the counters.
